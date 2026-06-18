@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>탐색 알고리즘 시각화</title>
+<style>
+  body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+  h1 { text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px; }
+  input, select, button { font-size: 16px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  #chart { display: flex; align-items: flex-end; height: 320px; background: #fff; border: 1px solid #ddd; padding: 10px; gap: 4px; }
+  .bar { background: #4a90d9; flex: 1; position: relative; display: flex; align-items: flex-end; justify-content: center; transition: height 0.2s, background 0.2s, opacity 0.2s; min-width: 8px; }
+  .bar.compare { background: #f5a623; }
+  .bar.found { background: #4caf50; }
+  .bar.outOfRange { opacity: 0.25; }
+  .bar span { position: absolute; top: -20px; font-size: 12px; color: #333; }
+  #status { text-align: center; margin-top: 14px; font-size: 15px; min-height: 20px; }
+  #legend { display: flex; justify-content: center; gap: 24px; margin-top: 10px; font-size: 14px; }
+  #legend .item { display: flex; align-items: center; gap: 6px; }
+  #legend .swatch { width: 16px; height: 16px; border-radius: 3px; display: inline-block; }
+  #statsTable { margin: 20px auto 0; border-collapse: collapse; width: 100%; max-width: 560px; background: #fff; }
+  #statsTable th, #statsTable td { border: 1px solid #ddd; padding: 6px 10px; text-align: center; font-size: 14px; }
+  #statsTable th { background: #eee; }
+</style>
+</head>
+<body>
+
+<h1>탐색 알고리즘 시각화</h1>
+
+<div class="controls">
+  <input id="valuesInput" type="text" placeholder="값 입력 (예: 5,3,8,1,9,2)" size="36">
+  <input id="targetInput" type="text" placeholder="찾을 값" size="8">
+  <button id="randomBtn">랜덤 생성</button>
+  <select id="algoSelect">
+    <option value="sequential">순차 탐색</option>
+    <option value="binary">이분 탐색</option>
+  </select>
+  <label>속도: <input id="speed" type="range" min="50" max="1000" value="300"></label>
+  <button id="startBtn">시작</button>
+  <button id="pauseBtn">일시정지</button>
+  <button id="stopBtn">중단</button>
+  <button id="resetBtn">초기화</button>
+</div>
+
+<div id="chart"></div>
+<div id="status">값과 찾을 값을 입력하고 알고리즘을 선택한 뒤 시작 버튼을 누르세요.</div>
+
+<div id="legend">
+  <div class="item"><span class="swatch" style="background:#4a90d9"></span>비교 전 (기본)</div>
+  <div class="item"><span class="swatch" style="background:#f5a623"></span>비교 중</div>
+  <div class="item"><span class="swatch" style="background:#4caf50"></span>찾음</div>
+  <div class="item"><span class="swatch" style="background:#4a90d9;opacity:0.25"></span>탐색 범위 밖 (이분 탐색)</div>
+</div>
+
+<table id="statsTable">
+  <thead>
+    <tr><th>단계</th><th>비교 위치</th><th>비교 값</th><th>결과</th></tr>
+  </thead>
+  <tbody id="statsBody"></tbody>
+</table>
+
+<script>
+const chart = document.getElementById('chart');
+const statusEl = document.getElementById('status');
+const valuesInput = document.getElementById('valuesInput');
+const targetInput = document.getElementById('targetInput');
+const speedInput = document.getElementById('speed');
+const statsBody = document.getElementById('statsBody');
+const pauseBtn = document.getElementById('pauseBtn');
+
+let values = [];
+let running = false;
+let stopRequested = false;
+let paused = false;
+
+class SearchStopped extends Error {}
+
+function parseValues(text) {
+  return text.split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(Number)
+    .filter(n => !isNaN(n));
+}
+
+function randomValues(n = 10) {
+  return Array.from({length: n}, () => Math.floor(Math.random() * 99) + 1);
+}
+
+function resetStats() {
+  statsBody.innerHTML = '';
+}
+
+function addStatRow(step, pos, val, result) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${step}</td><td>${pos}</td><td>${val}</td><td>${result}</td>`;
+  statsBody.appendChild(tr);
+}
+
+function render(arr, highlights = {}) {
+  const max = Math.max(...arr, 1);
+  chart.innerHTML = '';
+  arr.forEach((val, i) => {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    if (highlights.outOfRange && highlights.outOfRange.has(i)) bar.classList.add('outOfRange');
+    if (highlights.found && highlights.found === i) bar.classList.add('found');
+    else if (highlights.compare && highlights.compare === i) bar.classList.add('compare');
+    bar.style.height = (val / max * 100) + '%';
+    const label = document.createElement('span');
+    label.textContent = val;
+    bar.appendChild(label);
+    chart.appendChild(bar);
+  });
+}
+
+function rawSleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function sleep(ms) {
+  if (stopRequested) throw new SearchStopped();
+  await rawSleep(ms);
+  while (paused) {
+    if (stopRequested) throw new SearchStopped();
+    await rawSleep(100);
+  }
+  if (stopRequested) throw new SearchStopped();
+}
+
+function getDelay() {
+  return 1050 - Number(speedInput.value);
+}
+
+async function sequentialSearch(arr, target) {
+  for (let i = 0; i < arr.length; i++) {
+    render(arr, { compare: i });
+    statusEl.textContent = `인덱스 ${i} 비교 중: ${arr[i]} vs ${target}`;
+    await sleep(getDelay());
+    if (arr[i] === target) {
+      addStatRow(i + 1, i, arr[i], '일치 (탐색 종료)');
+      render(arr, { found: i });
+      statusEl.textContent = `찾음! 인덱스 ${i}에서 ${target} 발견`;
+      return i;
+    }
+    addStatRow(i + 1, i, arr[i], '불일치');
+  }
+  render(arr, {});
+  statusEl.textContent = `${target} 값을 찾지 못했습니다.`;
+  return -1;
+}
+
+async function binarySearch(arr, target) {
+  let low = 0, high = arr.length - 1;
+  let step = 0;
+  while (low <= high) {
+    step++;
+    const mid = Math.floor((low + high) / 2);
+    const outOfRange = new Set();
+    for (let i = 0; i < arr.length; i++) {
+      if (i < low || i > high) outOfRange.add(i);
+    }
+    render(arr, { compare: mid, outOfRange });
+    statusEl.textContent = `범위 [${low}, ${high}], 중간 인덱스 ${mid} 비교 중: ${arr[mid]} vs ${target}`;
+    await sleep(getDelay());
+    if (arr[mid] === target) {
+      addStatRow(step, mid, arr[mid], '일치 (탐색 종료)');
+      render(arr, { found: mid, outOfRange });
+      statusEl.textContent = `찾음! 인덱스 ${mid}에서 ${target} 발견`;
+      return mid;
+    } else if (arr[mid] < target) {
+      addStatRow(step, mid, arr[mid], `${arr[mid]} < ${target} → 오른쪽 탐색`);
+      low = mid + 1;
+    } else {
+      addStatRow(step, mid, arr[mid], `${arr[mid]} > ${target} → 왼쪽 탐색`);
+      high = mid - 1;
+    }
+  }
+  render(arr, {});
+  statusEl.textContent = `${target} 값을 찾지 못했습니다.`;
+  return -1;
+}
+
+document.getElementById('randomBtn').addEventListener('click', () => {
+  values = randomValues();
+  valuesInput.value = values.join(',');
+  render(values);
+  statusEl.textContent = '랜덤 값이 생성되었습니다.';
+});
+
+pauseBtn.addEventListener('click', () => {
+  if (!running) return;
+  paused = !paused;
+  pauseBtn.textContent = paused ? '계속' : '일시정지';
+  if (paused) statusEl.textContent = '일시정지됨';
+});
+
+document.getElementById('stopBtn').addEventListener('click', () => {
+  if (!running) return;
+  stopRequested = true;
+  paused = false;
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  stopRequested = true;
+  running = false;
+  paused = false;
+  pauseBtn.textContent = '일시정지';
+  values = parseValues(valuesInput.value);
+  render(values);
+  statusEl.textContent = '초기화되었습니다.';
+});
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  if (running) return;
+  values = parseValues(valuesInput.value);
+  const target = Number(targetInput.value);
+  if (values.length < 1) {
+    statusEl.textContent = '1개 이상의 값을 입력해주세요. (예: 5,3,8,1)';
+    return;
+  }
+  if (targetInput.value.trim() === '' || isNaN(target)) {
+    statusEl.textContent = '찾을 값을 입력해주세요.';
+    return;
+  }
+  running = true;
+  stopRequested = false;
+  paused = false;
+  pauseBtn.textContent = '일시정지';
+  resetStats();
+  const algo = document.getElementById('algoSelect').value;
+  let arr = [...values];
+  if (algo === 'binary') {
+    arr.sort((a, b) => a - b);
+    valuesInput.value = arr.join(',');
+    statusEl.textContent = '이분 탐색을 위해 값을 오름차순으로 정렬했습니다.';
+  }
+  render(arr);
+  await sleep(getDelay());
+  const algoMap = { sequential: sequentialSearch, binary: binarySearch };
+  try {
+    await algoMap[algo](arr, target);
+  } catch (e) {
+    if (e instanceof SearchStopped) {
+      statusEl.textContent = '탐색이 중단되었습니다.';
+    } else {
+      throw e;
+    }
+  } finally {
+    running = false;
+    stopRequested = false;
+    paused = false;
+    pauseBtn.textContent = '일시정지';
+  }
+});
+</script>
+</body>
+</html>
