@@ -9,7 +9,7 @@
   .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px; }
   input, select, button { font-size: 16px; padding: 6px 10px; }
   button { cursor: pointer; }
-  #chart { display: flex; align-items: flex-end; height: 320px; background: #fff; border: 1px solid #ddd; padding: 10px; gap: 4px; }
+  #chart { display: flex; align-items: flex-end; height: 320px; background: #fff; border: 1px solid #ddd; padding: 10px; gap: 4px; overflow-x: auto; }
   .bar { background: #4a90d9; flex: 1; position: relative; display: flex; align-items: flex-end; justify-content: center; transition: height 0.2s, background 0.2s, opacity 0.2s; min-width: 8px; }
   .bar.compare { background: #f5a623; }
   .bar.found { background: #4caf50; }
@@ -29,7 +29,7 @@
 <h1>탐색 알고리즘 시각화</h1>
 
 <div class="controls">
-  <input id="valuesInput" type="text" placeholder="값 입력 (예: 5,3,8,1,9,2)" size="36">
+  <input id="valuesInput" type="text" placeholder="값 입력 (예: 5,3,8,1 또는 1-1000)" size="36">
   <input id="targetInput" type="text" placeholder="찾을 값" size="8">
   <button id="randomBtn">랜덤 생성</button>
   <select id="algoSelect">
@@ -77,11 +77,23 @@ let paused = false;
 class SearchStopped extends Error {}
 
 function parseValues(text) {
-  return text.split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0)
-    .map(Number)
-    .filter(n => !isNaN(n));
+  const tokens = text.split(',').map(s => s.trim()).filter(s => s.length > 0);
+  const result = [];
+  for (const token of tokens) {
+    const rangeMatch = token.match(/^(-?\d+)\s*-\s*(-?\d+)$/);
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1]);
+      const end = Number(rangeMatch[2]);
+      const step = start <= end ? 1 : -1;
+      for (let v = start; step > 0 ? v <= end : v >= end; v += step) {
+        result.push(v);
+      }
+    } else {
+      const n = Number(token);
+      if (!isNaN(n)) result.push(n);
+    }
+  }
+  return result;
 }
 
 function randomValues(n = 10) {
