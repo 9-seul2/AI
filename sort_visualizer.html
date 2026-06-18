@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>정렬 알고리즘 시각화</title>
+<style>
+  body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+  h1 { text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px; }
+  input, select, button { font-size: 16px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  #chart { display: flex; align-items: flex-end; height: 320px; background: #fff; border: 1px solid #ddd; padding: 10px; gap: 4px; }
+  .bar { background: #4a90d9; flex: 1; position: relative; display: flex; align-items: flex-end; justify-content: center; transition: height 0.2s, background 0.2s; min-width: 8px; }
+  .bar.compare { background: #f5a623; }
+  .bar.swap { background: #e35454; }
+  .bar.sorted { background: #4caf50; }
+  .bar span { position: absolute; top: -20px; font-size: 12px; color: #333; }
+  #status { text-align: center; margin-top: 14px; font-size: 15px; min-height: 20px; }
+</style>
+</head>
+<body>
+
+<h1>정렬 알고리즘 시각화</h1>
+
+<div class="controls">
+  <input id="valuesInput" type="text" placeholder="값 입력 (예: 5,3,8,1,9,2)" size="40">
+  <button id="randomBtn">랜덤 생성</button>
+  <select id="algoSelect">
+    <option value="bubble">버블 정렬</option>
+    <option value="selection">선택 정렬</option>
+    <option value="insertion">삽입 정렬</option>
+    <option value="quick">퀵 정렬</option>
+    <option value="merge">병합 정렬</option>
+  </select>
+  <label>속도: <input id="speed" type="range" min="50" max="1000" value="300"></label>
+  <button id="startBtn">시작</button>
+  <button id="resetBtn">초기화</button>
+</div>
+
+<div id="chart"></div>
+<div id="status">값을 입력하고 알고리즘을 선택한 뒤 시작 버튼을 누르세요.</div>
+
+<script>
+const chart = document.getElementById('chart');
+const statusEl = document.getElementById('status');
+const valuesInput = document.getElementById('valuesInput');
+const speedInput = document.getElementById('speed');
+
+let values = [];
+let running = false;
+
+function parseValues(text) {
+  return text.split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(Number)
+    .filter(n => !isNaN(n));
+}
+
+function randomValues(n = 10) {
+  return Array.from({length: n}, () => Math.floor(Math.random() * 99) + 1);
+}
+
+function render(arr, highlights = {}) {
+  const max = Math.max(...arr, 1);
+  chart.innerHTML = '';
+  arr.forEach((val, i) => {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    if (highlights.sorted && highlights.sorted.has(i)) bar.classList.add('sorted');
+    if (highlights.swap && highlights.swap.includes(i)) bar.classList.add('swap');
+    else if (highlights.compare && highlights.compare.includes(i)) bar.classList.add('compare');
+    bar.style.height = (val / max * 100) + '%';
+    const label = document.createElement('span');
+    label.textContent = val;
+    bar.appendChild(label);
+    chart.appendChild(bar);
+  });
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getDelay() {
+  return 1050 - Number(speedInput.value);
+}
+
+async function bubbleSort(arr) {
+  const sorted = new Set();
+  const n = arr.length;
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < n - 1 - i; j++) {
+      render(arr, { compare: [j, j + 1], sorted });
+      statusEl.textContent = `비교 중: ${arr[j]} vs ${arr[j + 1]}`;
+      await sleep(getDelay());
+      if (arr[j] > arr[j + 1]) {
+        [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
+        render(arr, { swap: [j, j + 1], sorted });
+        statusEl.textContent = `교환: ${arr[j + 1]} <-> ${arr[j]}`;
+        await sleep(getDelay());
+      }
+    }
+    sorted.add(n - 1 - i);
+  }
+  sorted.add(0);
+  render(arr, { sorted });
+}
+
+async function selectionSort(arr) {
+  const sorted = new Set();
+  const n = arr.length;
+  for (let i = 0; i < n - 1; i++) {
+    let minIdx = i;
+    for (let j = i + 1; j < n; j++) {
+      render(arr, { compare: [minIdx, j], sorted });
+      statusEl.textContent = `최솟값 탐색: ${arr[minIdx]} vs ${arr[j]}`;
+      await sleep(getDelay());
+      if (arr[j] < arr[minIdx]) minIdx = j;
+    }
+    if (minIdx !== i) {
+      [arr[i], arr[minIdx]] = [arr[minIdx], arr[i]];
+      render(arr, { swap: [i, minIdx], sorted });
+      statusEl.textContent = `교환: ${arr[i]} <-> ${arr[minIdx]}`;
+      await sleep(getDelay());
+    }
+    sorted.add(i);
+  }
+  sorted.add(n - 1);
+  render(arr, { sorted });
+}
+
+async function insertionSort(arr) {
+  const n = arr.length;
+  const sorted = new Set([0]);
+  for (let i = 1; i < n; i++) {
+    let key = arr[i];
+    let j = i - 1;
+    while (j >= 0 && arr[j] > key) {
+      render(arr, { compare: [j, j + 1], sorted });
+      statusEl.textContent = `삽입 위치 탐색: ${arr[j]} > ${key}`;
+      await sleep(getDelay());
+      arr[j + 1] = arr[j];
+      j--;
+      render(arr, { swap: [j + 1], sorted });
+      await sleep(getDelay());
+    }
+    arr[j + 1] = key;
+    sorted.add(i);
+    render(arr, { sorted });
+  }
+}
+
+async function quickSort(arr, lo = 0, hi = arr.length - 1, sorted = new Set()) {
+  if (lo < hi) {
+    const pivot = arr[hi];
+    let p = lo;
+    for (let i = lo; i < hi; i++) {
+      render(arr, { compare: [i, hi], sorted });
+      statusEl.textContent = `피벗(${pivot})과 비교: ${arr[i]}`;
+      await sleep(getDelay());
+      if (arr[i] < pivot) {
+        [arr[i], arr[p]] = [arr[p], arr[i]];
+        render(arr, { swap: [i, p], sorted });
+        await sleep(getDelay());
+        p++;
+      }
+    }
+    [arr[p], arr[hi]] = [arr[hi], arr[p]];
+    render(arr, { swap: [p, hi], sorted });
+    statusEl.textContent = `피벗 위치 확정: ${arr[p]}`;
+    await sleep(getDelay());
+    sorted.add(p);
+    await quickSort(arr, lo, p - 1, sorted);
+    await quickSort(arr, p + 1, hi, sorted);
+  } else if (lo === hi) {
+    sorted.add(lo);
+    render(arr, { sorted });
+  }
+  if (lo === 0 && hi === arr.length - 1) render(arr, { sorted });
+}
+
+async function mergeSort(arr, lo = 0, hi = arr.length - 1) {
+  if (lo >= hi) return;
+  const mid = Math.floor((lo + hi) / 2);
+  await mergeSort(arr, lo, mid);
+  await mergeSort(arr, mid + 1, hi);
+
+  const left = arr.slice(lo, mid + 1);
+  const right = arr.slice(mid + 1, hi + 1);
+  let i = 0, j = 0, k = lo;
+  while (i < left.length && j < right.length) {
+    render(arr, { compare: [k] });
+    statusEl.textContent = `병합 중: ${left[i]} vs ${right[j]}`;
+    await sleep(getDelay());
+    if (left[i] <= right[j]) {
+      arr[k] = left[i]; i++;
+    } else {
+      arr[k] = right[j]; j++;
+    }
+    render(arr, { swap: [k] });
+    k++;
+    await sleep(getDelay());
+  }
+  while (i < left.length) { arr[k] = left[i]; i++; k++; render(arr, { swap: [k - 1] }); await sleep(getDelay()); }
+  while (j < right.length) { arr[k] = right[j]; j++; k++; render(arr, { swap: [k - 1] }); await sleep(getDelay()); }
+
+  if (lo === 0 && hi === arr.length - 1) {
+    render(arr, { sorted: new Set(arr.map((_, idx) => idx)) });
+  }
+}
+
+document.getElementById('randomBtn').addEventListener('click', () => {
+  values = randomValues();
+  valuesInput.value = values.join(',');
+  render(values);
+  statusEl.textContent = '랜덤 값이 생성되었습니다.';
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  running = false;
+  values = parseValues(valuesInput.value);
+  render(values);
+  statusEl.textContent = '초기화되었습니다.';
+});
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  if (running) return;
+  values = parseValues(valuesInput.value);
+  if (values.length < 2) {
+    statusEl.textContent = '2개 이상의 값을 입력해주세요. (예: 5,3,8,1)';
+    return;
+  }
+  running = true;
+  const algo = document.getElementById('algoSelect').value;
+  const arr = [...values];
+  render(arr);
+  const algoMap = { bubble: bubbleSort, selection: selectionSort, insertion: insertionSort, quick: quickSort, merge: mergeSort };
+  await algoMap[algo](arr);
+  statusEl.textContent = '정렬 완료!';
+  running = false;
+});
+
+values = randomValues();
+valuesInput.value = values.join(',');
+render(values);
+</script>
+</body>
+</html>
