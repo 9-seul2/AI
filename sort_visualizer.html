@@ -39,6 +39,7 @@
   </select>
   <label>속도: <input id="speed" type="range" min="50" max="1000" value="300"></label>
   <button id="startBtn">시작</button>
+  <button id="pauseBtn">일시정지</button>
   <button id="stopBtn">중단</button>
   <button id="resetBtn">초기화</button>
 </div>
@@ -80,6 +81,7 @@ function addStatRow(label, compares, swaps) {
 let values = [];
 let running = false;
 let stopRequested = false;
+let paused = false;
 
 class SortStopped extends Error {}
 
@@ -112,14 +114,18 @@ function render(arr, highlights = {}) {
   });
 }
 
-function sleep(ms) {
+function rawSleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function sleep(ms) {
   if (stopRequested) throw new SortStopped();
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (stopRequested) reject(new SortStopped());
-      else resolve();
-    }, ms);
-  });
+  await rawSleep(ms);
+  while (paused) {
+    if (stopRequested) throw new SortStopped();
+    await rawSleep(100);
+  }
+  if (stopRequested) throw new SortStopped();
 }
 
 function getDelay() {
@@ -245,14 +251,26 @@ document.getElementById('randomBtn').addEventListener('click', () => {
   statusEl.textContent = '랜덤 값이 생성되었습니다.';
 });
 
+const pauseBtn = document.getElementById('pauseBtn');
+
+pauseBtn.addEventListener('click', () => {
+  if (!running) return;
+  paused = !paused;
+  pauseBtn.textContent = paused ? '계속' : '일시정지';
+  if (paused) statusEl.textContent = '일시정지됨';
+});
+
 document.getElementById('stopBtn').addEventListener('click', () => {
   if (!running) return;
   stopRequested = true;
+  paused = false;
 });
 
 document.getElementById('resetBtn').addEventListener('click', () => {
   stopRequested = true;
   running = false;
+  paused = false;
+  pauseBtn.textContent = '일시정지';
   values = parseValues(valuesInput.value);
   render(values);
   statusEl.textContent = '초기화되었습니다.';
@@ -267,6 +285,8 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   }
   running = true;
   stopRequested = false;
+  paused = false;
+  pauseBtn.textContent = '일시정지';
   resetStats();
   const algo = document.getElementById('algoSelect').value;
   const arr = [...values];
@@ -284,6 +304,8 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   } finally {
     running = false;
     stopRequested = false;
+    paused = false;
+    pauseBtn.textContent = '일시정지';
   }
 });
 </script>
