@@ -195,10 +195,26 @@ async function binarySearch(arr, target) {
 }
 
 document.getElementById('randomBtn').addEventListener('click', () => {
+  const algo = document.getElementById('algoSelect').value;
   values = randomValues();
+  if (algo === 'binary') {
+    values.sort((a, b) => a - b);
+  }
   valuesInput.value = values.join(',');
   render(values);
-  statusEl.textContent = '랜덤 값이 생성되었습니다.';
+  statusEl.textContent = algo === 'binary'
+    ? '이분 탐색은 정렬된 배열이 필요해 정렬된 랜덤 값이 생성되었습니다.'
+    : '랜덤 값이 생성되었습니다.';
+});
+
+document.getElementById('algoSelect').addEventListener('change', (e) => {
+  if (e.target.value !== 'binary') return;
+  values = parseValues(valuesInput.value);
+  if (values.length === 0) return;
+  values.sort((a, b) => a - b);
+  valuesInput.value = values.join(',');
+  render(values);
+  statusEl.textContent = '이분 탐색은 정렬된 배열이 필요해 현재 값을 정렬했습니다.';
 });
 
 pauseBtn.addEventListener('click', () => {
