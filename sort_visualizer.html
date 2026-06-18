@@ -16,6 +16,12 @@
   .bar.sorted { background: #4caf50; }
   .bar span { position: absolute; top: -20px; font-size: 12px; color: #333; }
   #status { text-align: center; margin-top: 14px; font-size: 15px; min-height: 20px; }
+  #legend { display: flex; justify-content: center; gap: 24px; margin-top: 10px; font-size: 14px; }
+  #legend .item { display: flex; align-items: center; gap: 6px; }
+  #legend .swatch { width: 16px; height: 16px; border-radius: 3px; display: inline-block; }
+  #statsTable { margin: 20px auto 0; border-collapse: collapse; width: 100%; max-width: 500px; background: #fff; }
+  #statsTable th, #statsTable td { border: 1px solid #ddd; padding: 6px 10px; text-align: center; font-size: 14px; }
+  #statsTable th { background: #eee; }
 </style>
 </head>
 <body>
@@ -30,7 +36,6 @@
     <option value="selection">선택 정렬</option>
     <option value="insertion">삽입 정렬</option>
     <option value="quick">퀵 정렬</option>
-    <option value="merge">병합 정렬</option>
   </select>
   <label>속도: <input id="speed" type="range" min="50" max="1000" value="300"></label>
   <button id="startBtn">시작</button>
@@ -41,11 +46,36 @@
 <div id="chart"></div>
 <div id="status">값을 입력하고 알고리즘을 선택한 뒤 시작 버튼을 누르세요.</div>
 
+<div id="legend">
+  <div class="item"><span class="swatch" style="background:#4a90d9"></span>비교 전 (기본)</div>
+  <div class="item"><span class="swatch" style="background:#f5a623"></span>비교 중</div>
+  <div class="item"><span class="swatch" style="background:#e35454"></span>교환/이동</div>
+  <div class="item"><span class="swatch" style="background:#4caf50"></span>정렬 완료</div>
+</div>
+
+<table id="statsTable">
+  <thead>
+    <tr><th>사이클</th><th>비교 횟수</th><th>교환 횟수</th></tr>
+  </thead>
+  <tbody id="statsBody"></tbody>
+</table>
+
 <script>
 const chart = document.getElementById('chart');
 const statusEl = document.getElementById('status');
 const valuesInput = document.getElementById('valuesInput');
 const speedInput = document.getElementById('speed');
+const statsBody = document.getElementById('statsBody');
+
+function resetStats() {
+  statsBody.innerHTML = '';
+}
+
+function addStatRow(label, compares, swaps) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${label}</td><td>${compares}</td><td>${swaps}</td>`;
+  statsBody.appendChild(tr);
+}
 
 let values = [];
 let running = false;
@@ -100,18 +130,22 @@ async function bubbleSort(arr) {
   const sorted = new Set();
   const n = arr.length;
   for (let i = 0; i < n - 1; i++) {
+    let compares = 0, swaps = 0;
     for (let j = 0; j < n - 1 - i; j++) {
       render(arr, { compare: [j, j + 1], sorted });
       statusEl.textContent = `비교 중: ${arr[j]} vs ${arr[j + 1]}`;
+      compares++;
       await sleep(getDelay());
       if (arr[j] > arr[j + 1]) {
         [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
         render(arr, { swap: [j, j + 1], sorted });
         statusEl.textContent = `교환: ${arr[j + 1]} <-> ${arr[j]}`;
+        swaps++;
         await sleep(getDelay());
       }
     }
     sorted.add(n - 1 - i);
+    addStatRow(`${i + 1}회차`, compares, swaps);
   }
   sorted.add(0);
   render(arr, { sorted });
@@ -122,9 +156,11 @@ async function selectionSort(arr) {
   const n = arr.length;
   for (let i = 0; i < n - 1; i++) {
     let minIdx = i;
+    let compares = 0, swaps = 0;
     for (let j = i + 1; j < n; j++) {
       render(arr, { compare: [minIdx, j], sorted });
       statusEl.textContent = `최솟값 탐색: ${arr[minIdx]} vs ${arr[j]}`;
+      compares++;
       await sleep(getDelay());
       if (arr[j] < arr[minIdx]) minIdx = j;
     }
@@ -132,9 +168,11 @@ async function selectionSort(arr) {
       [arr[i], arr[minIdx]] = [arr[minIdx], arr[i]];
       render(arr, { swap: [i, minIdx], sorted });
       statusEl.textContent = `교환: ${arr[i]} <-> ${arr[minIdx]}`;
+      swaps++;
       await sleep(getDelay());
     }
     sorted.add(i);
+    addStatRow(`${i + 1}회차`, compares, swaps);
   }
   sorted.add(n - 1);
   render(arr, { sorted });
@@ -146,32 +184,39 @@ async function insertionSort(arr) {
   for (let i = 1; i < n; i++) {
     let key = arr[i];
     let j = i - 1;
+    let compares = 0, swaps = 0;
     while (j >= 0 && arr[j] > key) {
       render(arr, { compare: [j, j + 1], sorted });
       statusEl.textContent = `삽입 위치 탐색: ${arr[j]} > ${key}`;
+      compares++;
       await sleep(getDelay());
       arr[j + 1] = arr[j];
       j--;
+      swaps++;
       render(arr, { swap: [j + 1], sorted });
       await sleep(getDelay());
     }
     arr[j + 1] = key;
     sorted.add(i);
     render(arr, { sorted });
+    addStatRow(`${i}회차`, compares, swaps);
   }
 }
 
-async function quickSort(arr, lo = 0, hi = arr.length - 1, sorted = new Set()) {
+async function quickSort(arr, lo = 0, hi = arr.length - 1, sorted = new Set(), cycle = { n: 0 }) {
   if (lo < hi) {
     const pivot = arr[hi];
     let p = lo;
+    let compares = 0, swaps = 0;
     for (let i = lo; i < hi; i++) {
       render(arr, { compare: [i, hi], sorted });
       statusEl.textContent = `피벗(${pivot})과 비교: ${arr[i]}`;
+      compares++;
       await sleep(getDelay());
       if (arr[i] < pivot) {
         [arr[i], arr[p]] = [arr[p], arr[i]];
         render(arr, { swap: [i, p], sorted });
+        swaps++;
         await sleep(getDelay());
         p++;
       }
@@ -179,45 +224,18 @@ async function quickSort(arr, lo = 0, hi = arr.length - 1, sorted = new Set()) {
     [arr[p], arr[hi]] = [arr[hi], arr[p]];
     render(arr, { swap: [p, hi], sorted });
     statusEl.textContent = `피벗 위치 확정: ${arr[p]}`;
+    swaps++;
     await sleep(getDelay());
     sorted.add(p);
-    await quickSort(arr, lo, p - 1, sorted);
-    await quickSort(arr, p + 1, hi, sorted);
+    cycle.n++;
+    addStatRow(`${cycle.n}회차 (분할: ${lo}~${hi})`, compares, swaps);
+    await quickSort(arr, lo, p - 1, sorted, cycle);
+    await quickSort(arr, p + 1, hi, sorted, cycle);
   } else if (lo === hi) {
     sorted.add(lo);
     render(arr, { sorted });
   }
   if (lo === 0 && hi === arr.length - 1) render(arr, { sorted });
-}
-
-async function mergeSort(arr, lo = 0, hi = arr.length - 1) {
-  if (lo >= hi) return;
-  const mid = Math.floor((lo + hi) / 2);
-  await mergeSort(arr, lo, mid);
-  await mergeSort(arr, mid + 1, hi);
-
-  const left = arr.slice(lo, mid + 1);
-  const right = arr.slice(mid + 1, hi + 1);
-  let i = 0, j = 0, k = lo;
-  while (i < left.length && j < right.length) {
-    render(arr, { compare: [k] });
-    statusEl.textContent = `병합 중: ${left[i]} vs ${right[j]}`;
-    await sleep(getDelay());
-    if (left[i] <= right[j]) {
-      arr[k] = left[i]; i++;
-    } else {
-      arr[k] = right[j]; j++;
-    }
-    render(arr, { swap: [k] });
-    k++;
-    await sleep(getDelay());
-  }
-  while (i < left.length) { arr[k] = left[i]; i++; k++; render(arr, { swap: [k - 1] }); await sleep(getDelay()); }
-  while (j < right.length) { arr[k] = right[j]; j++; k++; render(arr, { swap: [k - 1] }); await sleep(getDelay()); }
-
-  if (lo === 0 && hi === arr.length - 1) {
-    render(arr, { sorted: new Set(arr.map((_, idx) => idx)) });
-  }
 }
 
 document.getElementById('randomBtn').addEventListener('click', () => {
@@ -249,10 +267,11 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   }
   running = true;
   stopRequested = false;
+  resetStats();
   const algo = document.getElementById('algoSelect').value;
   const arr = [...values];
   render(arr);
-  const algoMap = { bubble: bubbleSort, selection: selectionSort, insertion: insertionSort, quick: quickSort, merge: mergeSort };
+  const algoMap = { bubble: bubbleSort, selection: selectionSort, insertion: insertionSort, quick: quickSort };
   try {
     await algoMap[algo](arr);
     statusEl.textContent = '정렬 완료!';
